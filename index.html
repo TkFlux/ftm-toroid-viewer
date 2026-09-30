@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FTM / Compact Toroid Viewer</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121821f2;
+    --text: #e8eef7;
+    --muted: #93a0b4;
+    --accent: #ff8a3d;
+    --accent2: #4fd1c5;
+    --border: #243044;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #c { display: block; width: 100%; height: 100%; }
+  .panel {
+    position: absolute; z-index: 2;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
+    padding: 14px 16px;
+    max-width: min(360px, calc(100vw - 24px));
+  }
+  .panel h1 { margin: 0 0 4px; font-size: 15px; font-weight: 650; }
+  .panel p {
+    margin: 0 0 12px; font-size: 12px; color: var(--muted); line-height: 1.45;
+  }
+  #controls { top: 12px; left: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+  #readout {
+    bottom: 12px; left: 12px; font-size: 12px; color: var(--muted); line-height: 1.5;
+  }
+  #hint {
+    top: 12px; right: 12px; font-size: 11px; color: var(--muted); max-width: 200px;
+  }
+  label {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 10px;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+  label .val {
+    color: var(--accent2);
+    font-variant-numeric: tabular-nums;
+    min-width: 3.2em;
+    text-align: right;
+  }
+  input[type="range"] {
+    grid-column: 1 / -1;
+    width: 100%;
+    accent-color: var(--accent);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  button {
+    background: #1a2332; color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 12px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent2); }
+  button.active { background: #243447; border-color: var(--accent); }
+  .legend {
+    display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--muted);
+  }
+  .swatch {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 4px; vertical-align: -1px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="panel" id="controls">
+  <h1>FTM / Compact Toroid Viewer</h1>
+  <p>
+    Educational geometry sketch: fractal-toroidal / FRC-style envelope with a
+    co-rotating “hammer” (orange-slice) brightness plane. Use the sliders to match
+    shapes to plasma vocabulary — not a claim about any footage.
+  </p>
+
+  <label>Spin rate <span class="val" id="v-spin">0.60</span>
+    <input id="spin" type="range" min="0" max="3" step="0.01" value="0.6" />
+  </label>
+  <label>Poloidal tilt (°) <span class="val" id="v-tilt">28</span>
+    <input id="tilt" type="range" min="0" max="90" step="1" value="28" />
+  </label>
+  <label>B<sub>in</sub> / B<sub>out</sub> <span class="val" id="v-bratio">1.40</span>
+    <input id="bratio" type="range" min="0.2" max="3" step="0.01" value="1.4" />
+  </label>
+  <label>Major radius R <span class="val" id="v-R">1.00</span>
+    <input id="R" type="range" min="0.4" max="1.6" step="0.01" value="1" />
+  </label>
+  <label>Minor radius a <span class="val" id="v-a">0.38</span>
+    <input id="a" type="range" min="0.12" max="0.9" step="0.01" value="0.38" />
+  </label>
+  <label>Hammer intensity <span class="val" id="v-hammer">0.90</span>
+    <input id="hammer" type="range" min="0" max="1" step="0.01" value="0.9" />
+  </label>
+  <label>Hammer width <span class="val" id="v-hw">0.40</span>
+    <input id="hw" type="range" min="0.08" max="0.9" step="0.01" value="0.4" />
+  </label>
+  <label>Envelope opacity <span class="val" id="v-opacity">0.32</span>
+    <input id="opacity" type="range" min="0.05" max="0.85" step="0.01" value="0.32" />
+  </label>
+
+  <div class="row">
+    <button id="btn-pause" class="active">Spinning</button>
+    <button id="btn-trail">Show trails</button>
+    <button id="btn-reset">Reset view</button>
+  </div>
+  <div class="legend">
+    <span><i class="swatch" style="background:#4fd1c5"></i>envelope</span>
+    <span><i class="swatch" style="background:#ff8a3d"></i>hammer</span>
+    <span><i class="swatch" style="background:#7aa2ff"></i>axis</span>
+  </div>
+</div>
+
+<div class="panel" id="hint">Drag to orbit · scroll to zoom</div>
+<div class="panel" id="readout">
+  Shape: <span id="shape-label">compact sphere-like toroid</span><br />
+  Hammer is fixed in the body frame (co-rotates)<br />
+  Model: educational FTM / FRC sketch
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x0b0f14);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x0b0f14, 0.04);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  let camSph = { theta: 0.85, phi: 1.15, r: 5.2 };
+  function placeCam() {
+    camera.position.set(
+      camSph.r * Math.sin(camSph.phi) * Math.sin(camSph.theta),
+      camSph.r * Math.cos(camSph.phi),
+      camSph.r * Math.sin(camSph.phi) * Math.cos(camSph.theta)
+    );
+    camera.lookAt(0, 0, 0);
+  }
+  placeCam();
+
+  scene.add(new THREE.AmbientLight(0x445566, 0.85));
+  const key = new THREE.DirectionalLight(0xaaccff, 0.65);
+  key.position.set(4, 6, 2);
+  scene.add(key);
+
+  // stars
+  {
+    const n = 1000;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const r = 20 + Math.random() * 35;
+      const th = Math.random() * Math.PI * 2;
+      const ph = Math.acos(2 * Math.random() - 1);
+      pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+      pos[i * 3 + 1] = r * Math.cos(ph);
+      pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({
+      color: 0x8899aa, size: 0.045, sizeAttenuation: true, transparent: true, opacity: 0.65
+    })));
+  }
+
+  const body = new THREE.Group();
+  scene.add(body);
+
+  const envelopeMat = new THREE.MeshPhongMaterial({
+    color: 0x4fd1c5,
+    transparent: true,
+    opacity: 0.32,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    shininess: 40,
+  });
+  let envelope = new THREE.Mesh(new THREE.TorusGeometry(1, 0.38, 48, 128), envelopeMat);
+  envelope.rotation.x = Math.PI / 2;
+  body.add(envelope);
+
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: 0x2a5a62, wireframe: true, transparent: true, opacity: 0.2
+  });
+  let wire = new THREE.Mesh(new THREE.TorusGeometry(1, 0.38, 16, 48), wireMat);
+  wire.rotation.x = Math.PI / 2;
+  body.add(wire);
+
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: 0x7ad7cf, transparent: true, opacity: 0.07,
+    side: THREE.BackSide, depthWrite: false
+  });
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1.45, 48, 48), shellMat);
+  body.add(shell);
+
+  function makeHammerTexture(width) {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    const g = ctx.createLinearGradient(0, 0, c.width, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.38, 'rgba(255,100,30,0)');
+    g.addColorStop(0.47, 'rgba(255,160,50,0.35)');
+    g.addColorStop(0.52, 'rgba(255,230,140,1)');
+    g.addColorStop(0.58, 'rgba(255,120,30,0.4)');
+    g.addColorStop(0.72, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    const cx = c.width * 0.53;
+    const cy = c.height * 0.5;
+    const rad = c.height * (0.22 + width * 0.4);
+    const rg = ctx.createRadialGradient(cx, cy, 1, cx, cy, rad);
+    rg.addColorStop(0, 'rgba(255,250,210,1)');
+    rg.addColorStop(0.3, 'rgba(255,150,40,0.95)');
+    rg.addColorStop(0.65, 'rgba(255,70,15,0.4)');
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.fill();
+
+    // hammer shaft / T bar
+    const h = 10 + width * 28;
+    const stem = ctx.createLinearGradient(0, cy - h, 0, cy + h);
+    stem.addColorStop(0, 'rgba(255,160,50,0)');
+    stem.addColorStop(0.5, 'rgba(255,210,120,0.9)');
+    stem.addColorStop(1, 'rgba(255,160,50,0)');
+    ctx.fillStyle = stem;
+    ctx.fillRect(c.width * 0.16, cy - h / 2, c.width * 0.4, h);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  let hammerTex = makeHammerTexture(0.4);
+  const hammerMat = new THREE.MeshBasicMaterial({
+    map: hammerTex,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const hammerGroup = new THREE.Group();
+  body.add(hammerGroup);
+  const hammer = new THREE.Mesh(new THREE.SphereGeometry(1.15, 64, 64), hammerMat);
+  hammerGroup.add(hammer);
+
+  // secondary glow plate for stronger "slice"
+  const sliceMat = new THREE.MeshBasicMaterial({
+    color: 0xff9a3a,
+    transparent: true,
+    opacity: 0.22,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const slice = new THREE.Mesh(new THREE.CircleGeometry(1.05, 64), sliceMat);
+  hammerGroup.add(slice);
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0.6 })
+  );
+  body.add(core);
+
+  // spin axis
+  const axisGeom = new THREE.CylinderGeometry(0.02, 0.02, 3.2, 8);
+  const axis = new THREE.Mesh(axisGeom, new THREE.MeshBasicMaterial({ color: 0x7aa2ff }));
+  body.add(axis);
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.08, 0.2, 12),
+    new THREE.MeshBasicMaterial({ color: 0x7aa2ff })
+  );
+  cone.position.y = 1.7;
+  body.add(cone);
+
+  const trailMat = new THREE.MeshBasicMaterial({
+    color: 0x111118, transparent: true, opacity: 0.55, depthWrite: false
+  });
+  const trailA = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.12, 2.1, 14, 1, true), trailMat);
+  const trailB = trailA.clone();
+  trailA.position.set(0, 0, 1.65); trailA.rotation.x = Math.PI / 2;
+  trailB.position.set(0, 0, -1.65); trailB.rotation.x = Math.PI / 2;
+  trailA.visible = trailB.visible = false;
+  body.add(trailA, trailB);
+
+  const params = {
+    spin: 0.6, tilt: 28, bratio: 1.4, R: 1.0, a: 0.38,
+    hammer: 0.9, hw: 0.4, opacity: 0.32,
+    paused: false, trails: false,
+  };
+
+  function shapeLabel(bratio, R, a) {
+    if (bratio >= 1.6 && a / R > 0.65) return 'sphere-like compact toroid (high β)';
+    if (bratio >= 1.2) return 'compact sphere-like toroid';
+    if (a / R < 0.35) return 'thin ring torus (donut)';
+    return 'standard torus / FRC-like';
+  }
+
+  function rebuildToroid() {
+    const R = params.R;
+    const aEff = Math.min(R * 0.95, params.a * (0.7 + 0.45 * Math.min(params.bratio, 2.5)));
+    envelope.geometry.dispose();
+    wire.geometry.dispose();
+    envelope.geometry = new THREE.TorusGeometry(R, aEff, 48, 128);
+    wire.geometry = new THREE.TorusGeometry(R, aEff, 16, 48);
+    const shellR = R + aEff * (0.55 + 0.55 * Math.min(params.bratio, 2));
+    shell.geometry.dispose();
+    shell.geometry = new THREE.SphereGeometry(shellR, 48, 48);
+    hammer.scale.setScalar(Math.max(0.9, shellR * 0.8));
+    slice.scale.setScalar(Math.max(0.85, shellR * 0.72));
+    document.getElementById('shape-label').textContent = shapeLabel(params.bratio, R, aEff);
+  }
+
+  function bind(id, key, fmt) {
+    fmt = fmt || (v => Number(v).toFixed(2));
+    const el = document.getElementById(id);
+    const out = document.getElementById('v-' + id);
+    el.addEventListener('input', () => {
+      params[key] = parseFloat(el.value);
+      out.textContent = fmt(params[key]);
+      if (key === 'R' || key === 'a' || key === 'bratio') rebuildToroid();
+      if (key === 'opacity') envelopeMat.opacity = params.opacity;
+      if (key === 'hammer') {
+        hammerMat.opacity = params.hammer;
+        sliceMat.opacity = 0.1 + params.hammer * 0.25;
+      }
+      if (key === 'hw') {
+        hammerTex.dispose();
+        hammerTex = makeHammerTexture(params.hw);
+        hammerMat.map = hammerTex;
+        hammerMat.needsUpdate = true;
+      }
+      if (key === 'tilt') {
+        hammerGroup.rotation.z = THREE.MathUtils.degToRad(params.tilt);
+        slice.rotation.z = 0;
+      }
+    });
+  }
+  bind('spin', 'spin');
+  bind('tilt', 'tilt', v => String(Math.round(v)));
+  bind('bratio', 'bratio');
+  bind('R', 'R');
+  bind('a', 'a');
+  bind('hammer', 'hammer');
+  bind('hw', 'hw');
+  bind('opacity', 'opacity');
+
+  document.getElementById('btn-pause').onclick = function () {
+    params.paused = !params.paused;
+    this.textContent = params.paused ? 'Paused' : 'Spinning';
+    this.classList.toggle('active', !params.paused);
+  };
+  document.getElementById('btn-trail').onclick = function () {
+    params.trails = !params.trails;
+    trailA.visible = trailB.visible = params.trails;
+    this.classList.toggle('active', params.trails);
+  };
+  document.getElementById('btn-reset').onclick = function () {
+    camSph = { theta: 0.85, phi: 1.15, r: 5.2 };
+    placeCam();
+  };
+
+  hammerGroup.rotation.z = THREE.MathUtils.degToRad(params.tilt);
+  rebuildToroid();
+
+  // orbit controls
+  let dragging = false, lastX = 0, lastY = 0;
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    camSph.theta -= dx * 0.005;
+    camSph.phi = Math.max(0.12, Math.min(Math.PI - 0.12, camSph.phi + dy * 0.005));
+    placeCam();
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    camSph.r = Math.max(2.2, Math.min(14, camSph.r + e.deltaY * 0.01));
+    placeCam();
+  }, { passive: false });
+
+  function resize() {
+    const w = innerWidth, h = innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false);
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  let angle = 0;
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (!params.paused) {
+      angle += dt * params.spin;
+      body.rotation.y = angle;
+    }
+    const s = 1 + 0.05 * Math.sin(now * 0.004);
+    core.scale.setScalar(s);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
